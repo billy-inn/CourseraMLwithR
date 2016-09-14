@@ -1,0 +1,214 @@
+---
+#title: "ex5"
+#author: "Peng Xu"
+#date: "2016年8月31日"
+output: html_document
+---
+
+**Code in R for [Coursera-ML](https://www.coursera.org/learn/machine-learning) and [CMPUT466/551](https://www.ualberta.ca/computing-science/undergraduate-studies/course-directory/courses/machine-learning) in University of Alberta**
+
+This post refers to programming exercise 5 in Coursera-ML. All the code can be found in [this repo](https://github.com/billy-inn/CourseraMLwithR).
+
+```{r warning=FALSE, message=FALSE}
+setwd("~/Coding/R/CMPUT466/mlclass-ex5")
+library(ggplot2)
+library(R.matlab)
+library(devtools)
+source_url("https://raw.githubusercontent.com/ggrothendieck/gsubfn/master/R/list.R")
+```
+
+### Regularized Linear Regression
+
+#### Visualizing the dataset
+
+Use a scatter plot to visualize the data.
+
+```{r}
+data <- readMat("ex5data1.mat")
+X <- data$X
+y <- data$y
+Xtest <- data$Xtest
+ytest <- data$ytest
+Xval <- data$Xval
+yval <- data$yval
+df <- data.frame(X=X, y=y)
+ggplot(df, aes(X, y, col="Training data")) + geom_point(shape=I(4), size=I(3)) +
+  labs(x="Change in water level (x)", y="Water flowing out of the damn (y)") +
+  scale_color_manual(guide=FALSE, values=c("Red"))
+```
+
+#### Regularized linear regression cost function
+
+Compute the cost function with a regularized term:
+
+$$J(\theta)=\left(\sum_{i=1}^m(h_\theta(x^{(i)})-y^{(i)})^2\right)+\frac{\lambda}{2m}\left(\sum_{j=1}^n\theta_j^2\right)$$
+
+where $\lambda$ is a regularization parameter which controls the degree of regularization.
+
+```{r}
+computeCost = function(theta, X, y, lambda) {
+  m = length(y)
+  n = length(theta)
+  sum((X %*% theta - y)^2)/(2*m) + lambda/(2*m)*t(theta[2:n]) %*% theta[2:n]
+}
+
+myTheta <- c(1., 1.)
+computeCost(myTheta, cbind(1, X), y, 1)
+```
+
+#### Regularized linear regression gradient
+
+Compute gradient of the cost function with a regularized term:
+
+```{r}
+computeGrad = function(theta, X, y, lambda) {
+  m = length(y)
+  n = length(theta)
+  tmp <- theta
+  tmp[1] = 0
+  1./m*t(X) %*% (X %*% theta - y) + lambda/m*tmp
+}
+
+computeGrad(myTheta, cbind(1, X), y, 1)
+```
+
+#### Fitting linear regression
+
+Use the ```optim``` function to fit the linear regression and plot the fitted line.
+
+```{r}
+trainLinearReg <- function(X, y, lambda, maxit) {
+  n <- dim(X)[2]
+  theta <- matrix(0, n, 1)
+  res <- optim(theta, computeCost, computeGrad, X, y, lambda, method = "CG", control = list(maxit = maxit))
+  res$par
+}
+
+lambda <- 0
+theta <- trainLinearReg(cbind(1,X), y, lambda, 10000)
+
+df$y.pred <- cbind(1, X) %*% theta
+ggplot(df, aes(X, y, col="Training data")) + geom_point(shape=I(4), size=I(3)) +
+  labs(x="Change in water level (x)", y="Water flowing out of the damn (y)", title="Linear Regression Fit") +
+  geom_line(aes(X, y.pred, col="Regularized linear regression")) +
+  scale_color_manual(guide=FALSE, values=c("Blue", "Red"))
+```
+
+### Bias-variance
+
+#### Learning curves
+
+Learning curves are useful in debugging learning algorithms which plot training and validation error as a function of training set size.
+
+```{r warning=FALSE}
+learningCurve <- function(X, y, X_val, y_val, lambda, maxit) {
+  m = length(y)
+  error.train = matrix(0, m, 1)
+  error.valid = matrix(0, m, 1)
+  for(i in 1:m) {
+    theta <- trainLinearReg(X[1:i,,drop=FALSE], y[1:i], lambda, maxit)
+    error.train[i] = computeCost(theta, X[1:i,], y[1:i], 0)
+    error.valid[i] = computeCost(theta, X_val, y_val, 0)
+  }
+  list(error.train=error.train, error.valid=error.valid)
+}
+list[error.train, error.valid] <- learningCurve(cbind(1, X), y, cbind(1, Xval), yval, lambda, 10000)
+
+m = length(y)
+df_lc <- data.frame(x=1:m, error.train=error.train, error.valid=error.valid)
+ggplot(df_lc, aes(x)) + geom_line(aes(y=error.train, col="training error")) +
+  geom_line(aes(y=error.valid, col="validation error")) +
+  labs(x="Number of training examples", y="Error", title="Learning curve for linear regression") +
+  scale_color_discrete(name="")
+```
+
+### Polynomial regression
+
+For polynomial regression, our hypothesis has the form:
+
+$$h_\theta(x) = \theta_0+\theta_1 x + \theta_2 x^2 + \dots + \theta_p x^p$$
+
+#### Learning Polynomial Regression
+
+Even though we have polynomial terms in our feature vector, we are still solving a linear regression optimization problem. The polynomial terms have simply turned into features that we can use for linear regression. As a result, we can use the function written before.
+
+```{r}
+polyFeatures = function(X, p) {
+  X_poly = matrix(0, length(X), p)
+  for(i in 1:p)
+    X_poly[,i] = X^i
+  X_poly
+}
+
+p <- 8
+X_poly <- polyFeatures(X, p)
+X_poly <- scale(X_poly)
+mu <- attr(X_poly, "scaled:center") 
+sigma <- attr(X_poly, "scaled:scale")
+X_poly <- cbind(1, X_poly)
+
+X_poly_test <- polyFeatures(Xtest, p)
+X_poly_test <- sweep(X_poly_test, 2, mu)
+X_poly_test <- sweep(X_poly_test, 2, sigma, "/")
+X_poly_test <- cbind(1, X_poly_test)
+
+X_poly_val <- polyFeatures(Xval, p)
+X_poly_val <- sweep(X_poly_val, 2, mu)
+X_poly_val <- sweep(X_poly_val, 2, sigma, "/")
+X_poly_val <- cbind(1, X_poly_val)
+
+lambda <- 0
+n = dim(X_poly)[2]
+theta <- trainLinearReg(X_poly, y, lambda, 200)
+
+idx <- seq(min(X)-15, max(X)+15, length.out=100)
+X_poly_fit <- polyFeatures(idx, p)
+X_poly_fit <- sweep(X_poly_fit, 2, mu)
+X_poly_fit <- sweep(X_poly_fit, 2, sigma, "/")
+X_poly_fit <- cbind(1, X_poly_fit)
+df_fit <- data.frame(x=idx,y=X_poly_fit %*% theta)
+ggplot(df, aes(X, y, col="Training data")) + geom_point(shape=I(4), size=I(3)) +
+  labs(x="Change in water level (x)", y="Water flowing out of the damn (y)", title=sprintf("Polynomial Regression Fit (lambda = %.1f)", lambda)) +
+  geom_line(aes(x, y, col="Regularized polynomial regression"), df_fit, linetype="dashed") +
+  scale_color_manual(guide=FALSE, values=c("Blue", "Red"))
+```
+
+Also, plot the learning curve for polynomial regression.
+
+```{r}
+list[error.train, error.valid] <- learningCurve(X_poly, y, X_poly_val, yval, lambda, 200)
+df_lc <- data.frame(x=1:m, error.train=error.train, error.valid=error.valid)
+ggplot(df_lc, aes(x)) + geom_line(aes(y=error.train, col="training error")) +
+  geom_line(aes(y=error.valid, col="validation error")) +
+  labs(x="Number of training examples", y="Error", title=sprintf("Polynomial Regression Learning Curve (lambda = %.1f)", lambda)) +
+  scale_color_discrete(name="")
+```
+
+#### Select $\lambda$ using a cross validation set
+
+The value of $\lambda$ can significantly affect the results of regularized polynomial regression on the training and validation set. We use a validation set to evaluate how good each $\lambda$ value is. After selecting the best $\lambda$ value using the validation set, we can then evaluate the model on the test set to estimate how well the model will perform on actual unseen data.
+
+```{r}
+validationCurve <- function(X, y, Xval, yval, maxit) {
+  lambda_vec = c(0, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10)
+  m = length(lambda_vec)
+  error.train = matrix(0, m, 1)
+  error.valid = matrix(0, m, 1)
+  for(i in 1:m) {
+    lambda = lambda_vec[i]
+    theta <- trainLinearReg(X, y, lambda, maxit)
+    error.train[i] = computeCost(theta, X, y, 0)
+    error.valid[i] = computeCost(theta, Xval, yval, 0)
+  }
+  list(lambda_vec=lambda_vec, error.train=error.train, error.valid=error.valid)
+}
+list[lambda_vec, error.train, error.valid] <- validationCurve(X_poly, y, X_poly_val, yval, 200)
+
+df_cv <- data.frame(lambda_vec=lambda_vec, error.train=error.train, error.valid=error.valid)
+ggplot(df_cv, aes(lambda_vec)) + geom_line(aes(y=error.train, col="training error")) +
+  geom_line(aes(y=error.valid, col="validation error")) +
+  labs(x="Lambda", y="Error") +
+  scale_color_discrete(name="")
+```
+
+

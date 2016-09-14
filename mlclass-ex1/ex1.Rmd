@@ -3,7 +3,7 @@
 output: html_document
 ---
 
-**Code in R for Coursera-ML and CMPUT466/551 in University of Alberta**
+**Code in R for [Coursera-ML](https://www.coursera.org/learn/machine-learning) and [CMPUT466/551](https://www.ualberta.ca/computing-science/undergraduate-studies/course-directory/courses/machine-learning) in University of Alberta**
 
 This post refers to programming exercise 1 in Coursera-ML. All the code can be found in [this repo](https://github.com/billy-inn/CourseraMLwithR).
 
